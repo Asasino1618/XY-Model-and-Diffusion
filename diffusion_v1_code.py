@@ -18,15 +18,15 @@ parser.add_argument('--ID', type=str, default=100, help='load ID')
 args = parser.parse_args(sys.argv[1:])
 
 #Temp range:0-2
-def log_info(date_str, lr, ts, tbs, tns, Loss, fid, file_name='ddpm_log.csv'):
+def log_info(date_str, lr, ts, tbs, tns, sat, Loss, fid, file_name='ddpm_log.csv'):
     # Define the header
     header = ["Model ID",  
               "Learning Rate", "timesteps", "train_batch_size",
-              "train_num_steps", "Loss_avg", "fid"
+              "train_num_steps", "sampling_timesteps", "Loss_avg", "fid"
               ]
 
     # Format the data
-    data = [date_str, lr, ts, tbs, tns, Loss, fid]
+    data = [date_str, lr, ts, tbs, tns, sat, Loss, fid]
 
     # Check if file exists and write the data
     file_exists = os.path.isfile(file_name)
@@ -44,12 +44,13 @@ def main():
     date = datetime.datetime.now()
     date_str = date.strftime('%Y%m%d%H%M')
 
-    num_timesteps = 2
+    num_timesteps = 1000
     Temperature = torch.tensor(args.T, dtype=torch.float32) / 2.0 * num_timesteps
     lr = 8e-5
     ts = num_timesteps
     tbs = 16
-    tns = 1
+    tns = 1000
+    sat = 100
 
     model = denoising_diffusion_pytorch.Unet(
         dim = 64,
@@ -63,6 +64,7 @@ def main():
         image_size = 128,
         timesteps = num_timesteps,    # number of steps
         objective = "pred_noise",
+        sampling_timesteps=sat,
     )
 
     trainer = denoising_diffusion_pytorch.Trainer(
@@ -77,20 +79,25 @@ def main():
         calculate_fid = True,              # whether to calculate fid during training
         num_fid_samples = 100,
         date = date_str if args.task == 'train' else args.ID,
-        save_best_and_latest_only=True
+        save_best_and_latest_only=True,
+        val_path="diffusion_val/1eminus1/"
     )
     lo = []
+    vlo = []
+    sep = []
     fi = 0
     if args.task == 'sample':
         trainer.load(ID=args.ID, milestone='fin')
     else:
-        lo, fi = trainer.train(Temperature)
+        lo, vlo, sep, fi = trainer.train(Temperature)
     lo = torch.tensor(lo)
     fi = torch.tensor(fi)
-    log_info(date_str, lr, ts, tbs, tns, lo.mean().item(), fi.item(), file_name='ddpm_log.csv')
+    log_info(date_str, lr, ts, tbs, tns, sat, lo.mean().item(), fi.item(), file_name='ddpm_log.csv')
     x = np.linspace(0, tns, tns)
     plt.figure()
-    plt.plot(x, lo, label='Loss')
+    plt.plot(x, lo, label='Train Loss')
+    plt.plot(sep, vlo, label='Validation Loss')
+    plt.legend()
     plt.ylabel("Loss")
     plt.xlabel("Epoch")
     plt.savefig(f"results/{date_str}.svg")

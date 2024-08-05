@@ -407,7 +407,7 @@ class Unet(Module):
 
     def forward(self, x, time, Temperature, x_self_cond = None):
         assert all([divisible_by(d, self.downsample_factor) for d in x.shape[-2:]]), f'your input dimensions {x.shape[-2:]} need to be divisible by {self.downsample_factor}, given the unet'
-        y = torch.ones_like(x) * (1 - torch.exp(-2 * self.J / Temperature))
+        y = torch.ones_like(x) * (1 - torch.exp(-2 * self.J / Temperature * 500.0))
         # print(y.shape)
         x = torch.cat([x, y], dim = 1)
         # print(x.shape)
@@ -908,7 +908,8 @@ class Trainer:
         max_grad_norm = 1.,
         num_fid_samples = 50000,
         save_best_and_latest_only = False,
-        date = None
+        date = None,
+        val_path = None, 
     ):
         super().__init__()
 
@@ -948,7 +949,7 @@ class Trainer:
         # dataset and dataloader
 
         self.ds = Dataset(folder, self.image_size, augment_horizontal_flip = augment_horizontal_flip, convert_image_to = convert_image_to)
-
+        self.vds = Dataset(val_path, self.image_size, augment_horizontal_flip = augment_horizontal_flip, convert_image_to = convert_image_to)
         assert len(self.ds) >= 100, 'you should have at least 100 images in your folder. at least 10k images recommended'
 
         dl = DataLoader(self.ds, batch_size = train_batch_size, shuffle = True, pin_memory = True, num_workers = cpu_count())
@@ -956,6 +957,8 @@ class Trainer:
         dl = self.accelerator.prepare(dl)
         self.dl = cycle(dl)
 
+        dlval = DataLoader(self.vds, batch_size = train_batch_size, shuffle = False, pin_memory = True, num_workers = cpu_count())
+        self.dlval = self.accelerator.prepare(dlval)
         # optimizer
 
         self.opt = Adam(diffusion_model.parameters(), lr = train_lr, betas = adam_betas)
@@ -1055,7 +1058,9 @@ class Trainer:
         device = accelerator.device
         prop = prop.to(device)
         loss_l = []
+        lossval_l = []
         fid_l = []
+        sep = []
 
         with tqdm(initial = self.step, total = self.train_num_steps, disable = not accelerator.is_main_process) as pbar:
 
@@ -1063,6 +1068,7 @@ class Trainer:
                 self.model.train()
 
                 total_loss = 0.
+                vtotal_loss = 0.
 
                 for _ in range(self.gradient_accumulate_every):
                     data = next(self.dl).to(device)
@@ -1074,18 +1080,36 @@ class Trainer:
 
                     self.accelerator.backward(loss)
 
-                pbar.set_description(f'loss: {total_loss:.4f}')
+                # pbar.set_description(f'loss: {total_loss:.4f}')
 
                 accelerator.wait_for_everyone()
                 accelerator.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
 
                 self.opt.step()
                 self.opt.zero_grad()
-
+                
+                if self.step % 10 == 0:
+                    self.ema.ema_model.eval()
+                    with torch.inference_mode():
+                        for data in self.dlval:
+                            # print(data.shape)
+                            data = data.to(device)
+                            with self.accelerator.autocast():
+                                vloss = self.model(data, Temperature=prop)
+                                vtotal_loss += vloss.item()
+                        vtotal_loss /= len(self.dlval)
+                    self.ema.ema_model.train()
+                    sep.append(self.step)
+                    lossval_l.append(vtotal_loss)
+                show_vloss = f'{vtotal_loss:.4f}' if self.step % 10 == 0 else "None"
+                pbar.set_description(f'train_loss: {total_loss:.4f}, val_loss: ' + show_vloss)
+                    
+                
                 accelerator.wait_for_everyone()
 
                 self.step += 1
                 loss_l.append(total_loss)
+                # lossval_l.append(vtotal_loss)
                 if accelerator.is_main_process:
                     self.ema.update()
 
@@ -1118,4 +1142,4 @@ class Trainer:
                 pbar.update(1)
             self.save(milestone='fin')
         accelerator.print('training complete')
-        return loss_l, self.best_fid
+        return loss_l, lossval_l, sep, self.best_fid
