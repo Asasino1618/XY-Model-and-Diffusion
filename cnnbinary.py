@@ -69,7 +69,7 @@ z = lattice()
 # z.show()
 to_pil = transforms.ToPILImage()
 num = 0
-for i in range(500):
+for i in range(0):
     print(f"low:{i}")
     z = lattice()
     z.metropolis_goto(max_epoch=100, T=0.1)
@@ -81,13 +81,13 @@ for i in range(500):
     num += 1
 
 num = 0
-for i in range(50):
+for i in range(10000):
     print(f"high:{i}")
     z = lattice()
-    z.metropolis_goto(max_epoch=100, T=100)
+    z.metropolis_goto(max_epoch=100, T=2.0)
     tensor = z.z
     tensor = (tensor - np.min(tensor)) / (np.max(tensor) - np.min(tensor))
     tensor = torch.from_numpy(tensor)
     image = to_pil(tensor)
-    image.save(f"./database_2binary/val/high/{num}_high.png")
+    image.save(f"./database_for_diffusion/train/high/{num}_high.png")
     num += 1

@@ -45,12 +45,12 @@ def main():
     date_str = date.strftime('%Y%m%d%H%M')
 
     num_timesteps = 1000
-    Temperature = torch.tensor(args.T, dtype=torch.float32) / 2.0 * num_timesteps
+    Temperature = torch.tensor(args.T, dtype=torch.float32) / 2.0 * num_timesteps#要inference的温度
     lr = 8e-5
     ts = num_timesteps
     tbs = 16
-    tns = 1000
-    sat = 100
+    tns = 2000
+    sat = 200
 
     model = denoising_diffusion_pytorch.Unet(
         dim = 64,
@@ -69,7 +69,7 @@ def main():
 
     trainer = denoising_diffusion_pytorch.Trainer(
         diffusion,
-        'database_for_diffusion/train/low',
+        'database_for_diffusion/train',
         train_batch_size = tbs,
         train_lr = lr,
         train_num_steps = tns,         # total training steps
@@ -80,7 +80,8 @@ def main():
         num_fid_samples = 100,
         date = date_str if args.task == 'train' else args.ID,
         save_best_and_latest_only=True,
-        val_path="diffusion_val/1eminus1/"
+        val_path="diffusion_val/1eminus1/",
+        tem_dict={'high':2.0 * 500.0, 'low':0.1 * 500.0},
     )
     lo = []
     vlo = []
@@ -120,3 +121,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+#['high':2.0, 'low':0.1]

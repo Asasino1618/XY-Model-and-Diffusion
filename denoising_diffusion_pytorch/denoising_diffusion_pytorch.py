@@ -6,6 +6,7 @@ from functools import partial
 from collections import namedtuple
 from multiprocessing import cpu_count
 import numpy as np
+import os
 
 import torch
 from torch import nn, einsum
@@ -407,7 +408,12 @@ class Unet(Module):
 
     def forward(self, x, time, Temperature, x_self_cond = None):
         assert all([divisible_by(d, self.downsample_factor) for d in x.shape[-2:]]), f'your input dimensions {x.shape[-2:]} need to be divisible by {self.downsample_factor}, given the unet'
-        y = torch.ones_like(x) * (1 - torch.exp(-2 * self.J / Temperature * 500.0))
+        if len(Temperature.shape) == 0:
+            Temperature = Temperature.cuda() * torch.ones(x.shape[0]).cuda()
+        Temperature = Temperature.float()
+        y = torch.ones_like(x)
+        for i in range(0, x.shape[0]):
+            y[i] *= (1 - torch.exp(-2 * self.J / Temperature[i] * 500.0))
         # print(y.shape)
         x = torch.cat([x, y], dim = 1)
         # print(x.shape)
@@ -419,8 +425,9 @@ class Unet(Module):
         r = x.clone()
 
         t = self.time_mlp(time)
-        nowT = torch.ones_like(time) * Temperature
-        t = t + self.temp_mlp(nowT)
+        # print(Temperature.dtype)
+        nowT = self.temp_mlp(torch.ones_like(time) * Temperature)
+        t = t + nowT
 
         h = []
 
@@ -815,11 +822,11 @@ class GaussianDiffusion(Module):
         x_self_cond = None
         if self.self_condition and random() < 0.5:
             with torch.no_grad():
-                x_self_cond = self.model_predictions(x, t).pred_x_start
+                x_self_cond = self.model_predictions(x, t, Temperature=Temperature).pred_x_start
                 x_self_cond.detach_()
 
         # predict and take gradient step
-
+        # print(Temperature.shape)
         model_out = self.model(x, t, Temperature, x_self_cond)
 
         if self.objective == 'pred_noise':
@@ -855,7 +862,8 @@ class Dataset(Dataset):
         image_size,
         exts = ['jpg', 'jpeg', 'png', 'tiff'],
         augment_horizontal_flip = False,
-        convert_image_to = None
+        convert_image_to = None,
+        tem_dict = None,
     ):
         super().__init__()
         self.folder = folder
@@ -872,13 +880,21 @@ class Dataset(Dataset):
             T.ToTensor()
         ])
 
+        self.tem_dict = tem_dict
+
     def __len__(self):
         return len(self.paths)
 
     def __getitem__(self, index):
         path = self.paths[index]
         img = Image.open(path)
-        return self.transform(img)
+        filename = os.path.basename(path)
+        img_tem = 0
+        for i in self.tem_dict.keys():
+            if i in filename:
+                img_tem = self.tem_dict[i]
+                break
+        return self.transform(img), img_tem
 
 # trainer class
 
@@ -896,7 +912,7 @@ class Trainer:
         ema_update_every = 10,
         ema_decay = 0.995,
         adam_betas = (0.9, 0.99),
-        save_and_sample_every = 1000,
+        save_and_sample_every = 1000,#1000
         num_samples = 25,
         results_folder = './results',
         amp = False,
@@ -910,6 +926,7 @@ class Trainer:
         save_best_and_latest_only = False,
         date = None,
         val_path = None, 
+        tem_dict = {'high':2.0*500.0, 'low':0.1*500.0},
     ):
         super().__init__()
 
@@ -925,6 +942,8 @@ class Trainer:
         self.model = diffusion_model
         self.channels = diffusion_model.channels
         is_ddim_sampling = diffusion_model.is_ddim_sampling
+        
+        self.tem_dict = tem_dict
 
         # default convert_image_to depending on channels
 
@@ -948,8 +967,8 @@ class Trainer:
 
         # dataset and dataloader
 
-        self.ds = Dataset(folder, self.image_size, augment_horizontal_flip = augment_horizontal_flip, convert_image_to = convert_image_to)
-        self.vds = Dataset(val_path, self.image_size, augment_horizontal_flip = augment_horizontal_flip, convert_image_to = convert_image_to)
+        self.ds = Dataset(folder, self.image_size, tem_dict=tem_dict, augment_horizontal_flip = augment_horizontal_flip, convert_image_to = convert_image_to)
+        self.vds = Dataset(val_path, self.image_size, tem_dict=tem_dict, augment_horizontal_flip = augment_horizontal_flip, convert_image_to = convert_image_to)
         assert len(self.ds) >= 100, 'you should have at least 100 images in your folder. at least 10k images recommended'
 
         dl = DataLoader(self.ds, batch_size = train_batch_size, shuffle = True, pin_memory = True, num_workers = cpu_count())
@@ -1053,7 +1072,7 @@ class Trainer:
         if exists(self.accelerator.scaler) and exists(data['scaler']):
             self.accelerator.scaler.load_state_dict(data['scaler'])
 
-    def train(self, prop):
+    def train(self, prop):#prop:想要检验的fid是温度多少
         accelerator = self.accelerator
         device = accelerator.device
         prop = prop.to(device)
@@ -1071,10 +1090,12 @@ class Trainer:
                 vtotal_loss = 0.
 
                 for _ in range(self.gradient_accumulate_every):
-                    data = next(self.dl).to(device)
+                    data, tem = next(self.dl)
+                    data = data.to(device)
+                    tem = tem.to(device)
 
                     with self.accelerator.autocast():
-                        loss = self.model(data, Temperature=prop)
+                        loss = self.model(data, Temperature=tem)
                         loss = loss / self.gradient_accumulate_every
                         total_loss += loss.item()
 
@@ -1088,20 +1109,20 @@ class Trainer:
                 self.opt.step()
                 self.opt.zero_grad()
                 
-                if self.step % 10 == 0:
+                if self.step % 50 == 0:
                     self.ema.ema_model.eval()
                     with torch.inference_mode():
-                        for data in self.dlval:
-                            # print(data.shape)
+                        for data, tem in self.dlval:
                             data = data.to(device)
+                            tem = tem.to(device)
                             with self.accelerator.autocast():
-                                vloss = self.model(data, Temperature=prop)
+                                vloss = self.model(data, Temperature=tem)
                                 vtotal_loss += vloss.item()
                         vtotal_loss /= len(self.dlval)
                     self.ema.ema_model.train()
                     sep.append(self.step)
                     lossval_l.append(vtotal_loss)
-                show_vloss = f'{vtotal_loss:.4f}' if self.step % 10 == 0 else "None"
+                show_vloss = f'{vtotal_loss:.4f}' if self.step % 50 == 0 else "None"
                 pbar.set_description(f'train_loss: {total_loss:.4f}, val_loss: ' + show_vloss)
                     
                 
