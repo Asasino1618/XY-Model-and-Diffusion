@@ -16,17 +16,17 @@ parser.add_argument('--T', type=float, required=True, help='Temperature')
 parser.add_argument('--N', type=int, default=100, help='Number Generate')
 parser.add_argument('--ID', type=str, default=100, help='load ID')
 args = parser.parse_args(sys.argv[1:])
-
+#git token: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
 #Temp range:0-2
-def log_info(date_str, lr, ts, tbs, tns, sat, Loss, fid, file_name='ddpm_log.csv'):
+def log_info(date_str, lr, ts, tbs, tns, sat, Loss, fid, T_s, file_name='ddpm_log.csv'):
     # Define the header
     header = ["Model ID",  
-              "Learning Rate", "timesteps", "train_batch_size",
-              "train_num_steps", "sampling_timesteps", "Loss_avg", "fid"
+              "Learning Rate", "timesteps", "train_batch_size", 
+              "train_num_steps", "sampling_timesteps", "Loss_avg", "fid", "T_sample"
               ]
 
     # Format the data
-    data = [date_str, lr, ts, tbs, tns, sat, Loss, fid]
+    data = [date_str, lr, ts, tbs, tns, sat, Loss, fid, T_s]
 
     # Check if file exists and write the data
     file_exists = os.path.isfile(file_name)
@@ -93,7 +93,7 @@ def main():
         lo, vlo, sep, fi = trainer.train(Temperature)
     lo = torch.tensor(lo)
     fi = torch.tensor(fi)
-    log_info(date_str, lr, ts, tbs, tns, sat, lo.mean().item(), fi.item(), file_name='ddpm_log.csv')
+    log_info(date_str, lr, ts, tbs, tns, sat, lo.mean().item(), fi.item(), T_s=args.T, file_name='ddpm_log.csv')
     x = np.linspace(0, tns, tns)
     plt.figure()
     plt.plot(x, lo, label='Train Loss')
