@@ -49,7 +49,7 @@ def main():
     lr = 8e-5
     ts = num_timesteps
     tbs = 16
-    tns = 2000
+    tns = 3000
     sat = 200
 
     model = denoising_diffusion_pytorch.Unet(
@@ -66,10 +66,10 @@ def main():
         objective = "pred_noise",
         sampling_timesteps=sat,
     )
-
+ 
     trainer = denoising_diffusion_pytorch.Trainer(
         diffusion,
-        'database_for_diffusion/train',
+        'database_for_diffusion_noscale/train',
         train_batch_size = tbs,
         train_lr = lr,
         train_num_steps = tns,         # total training steps
@@ -80,8 +80,8 @@ def main():
         num_fid_samples = 100,
         date = date_str if args.task == 'train' else args.ID,
         save_best_and_latest_only=True,
-        val_path="diffusion_val/1eminus1/",
-        tem_dict={'high':2.0 * 500.0, 'low':0.1 * 500.0},
+        val_path="diffusion_val/1eminus1_refined/",
+        tem_dict={'high':2.0 * 500.0, 'low':0.1 * 500.0, 'alice':0.2*500.0, 'bob':0.3*500.0, 'cat':0.4*500.0, 'dave':0.5*500.0, 'eve':1.9*500.0},
     )
     lo = []
     vlo = []

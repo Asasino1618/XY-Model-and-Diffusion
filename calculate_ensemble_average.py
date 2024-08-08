@@ -16,8 +16,10 @@ args = parser.parse_args(sys.argv[1:])
 
 def calculate_magnetic_moment(images):
     images = images * 2 * torch.pi
-    mx = torch.sum(torch.cos(images), dim=0)
-    my = torch.sum(torch.sin(images), dim=0)
+    print(torch.cos(images))
+    mx = torch.sum(torch.cos(images), dim=[1, 2, 3])
+    my = torch.sum(torch.sin(images), dim=[1, 2, 3])
+    print(mx, my)
     return torch.sqrt(mx**2 + my**2)
 
 def main():
@@ -69,8 +71,8 @@ def main():
     for t in range(len(Tr)):
         sampled_images = diffusion.sample(batch_size=args.N, Temperature=torch.tensor(Tr[t] * 500.0))
         magnetic_moments = calculate_magnetic_moment(sampled_images)
-        # print(magnetic_moments.type())
-        m_average[t] = magnetic_moments.mean().cpu()
+        print(magnetic_moments)
+        m_average[t] = magnetic_moments.mean()
         print(m_average[t].item())
 
     # Plot the results

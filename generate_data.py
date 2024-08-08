@@ -69,25 +69,49 @@ z = lattice()
 # z.show()
 to_pil = transforms.ToPILImage()
 num = 0
-for i in range(0):
-    print(f"low:{i}")
+for i in range(1000):
+    print(f"alice:{i}")
     z = lattice()
-    z.metropolis_goto(max_epoch=100, T=0.1)
+    z.metropolis_goto(max_epoch=100, T=1.9)
     tensor = z.z
-    tensor = (tensor - np.min(tensor)) / (np.max(tensor) - np.min(tensor))
+    tensor = tensor / 2.0 / np.pi
     tensor = torch.from_numpy(tensor)
     image = to_pil(tensor)
-    image.save(f"./diffusion_val/1eminus1/{num}_lmed.png")
+    image.save(f"./database_for_diffusion_noscale/train/{num}_eve.png")
     num += 1
 
 num = 0
-for i in range(500):
-    print(f"high:{i}")
+for i in range(1000):
+    print(f"bob:{i}")
     z = lattice()
-    z.metropolis_goto(max_epoch=100, T=2.0)
+    z.metropolis_goto(max_epoch=100, T=0.3)
     tensor = z.z
-    tensor = (tensor - np.min(tensor)) / (np.max(tensor) - np.min(tensor))
+    tensor = tensor / 2.0 / np.pi
     tensor = torch.from_numpy(tensor)
     image = to_pil(tensor)
-    image.save(f"./diffusion/1eminus1/{num}_hmed.png")
+    image.save(f"./database_for_diffusion_noscale/train/{num}_bob.png")
+    num += 1
+
+num = 0
+for i in range(1000):
+    print(f"cat:{i}")
+    z = lattice()
+    z.metropolis_goto(max_epoch=100, T=0.4)
+    tensor = z.z
+    tensor = tensor / 2.0 / np.pi
+    tensor = torch.from_numpy(tensor)
+    image = to_pil(tensor)
+    image.save(f"./database_for_diffusion_noscale/train/{num}_cat.png")
+    num += 1
+
+num = 0
+for i in range(1000):
+    print(f"dave:{i}")
+    z = lattice()
+    z.metropolis_goto(max_epoch=100, T=0.5)
+    tensor = z.z
+    tensor = tensor / 2.0 / np.pi
+    tensor = torch.from_numpy(tensor)
+    image = to_pil(tensor)
+    image.save(f"./database_for_diffusion_noscale/train/{num}_dave.png")
     num += 1
